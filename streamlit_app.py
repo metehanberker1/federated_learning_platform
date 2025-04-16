@@ -1,12 +1,20 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime
-import sqlite3
-from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from datetime import datetime
+import requests
 from model import HeartDiseaseModel
-import json
+
+# Set page configuration
+st.set_page_config(
+    page_title="Medical Analysis App",
+    page_icon="🏥",
+    layout="wide"
+)
+
+# Create uploads directory if it doesn't exist
+if not os.path.exists('uploads'):
+    os.makedirs('uploads')
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
@@ -18,124 +26,9 @@ if 'user_id' not in st.session_state:
 if 'local_model' not in st.session_state:
     st.session_state.local_model = None
 
-# Database functions
-def init_db():
-    conn = sqlite3.connect('federated_learning.db')
-    c = conn.cursor()
-    
-    # Create users table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Create user_actions table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS user_actions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            action_type TEXT NOT NULL,
-            details TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+# Server URL
+SERVER_URL = "http://localhost:5000"
 
-def verify_user(username, password):
-    conn = sqlite3.connect('federated_learning.db')
-    c = conn.cursor()
-    
-    c.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
-    result = c.fetchone()
-    conn.close()
-    
-    if not result or not check_password_hash(result[1], password):
-        return None
-    
-    return result[0]
-
-def create_user(username, email, password):
-    try:
-        conn = sqlite3.connect('federated_learning.db')
-        c = conn.cursor()
-        
-        # Check if username or email already exists
-        c.execute('SELECT id FROM users WHERE username = ? OR email = ?', (username, email))
-        if c.fetchone():
-            return None, "Username or email already exists"
-        
-        # Create new user
-        password_hash = generate_password_hash(password)
-        c.execute('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
-                 (username, email, password_hash))
-        
-        conn.commit()
-        user_id = c.lastrowid
-        conn.close()
-        
-        return user_id, None
-        
-    except Exception as e:
-        return None, str(e)
-
-def get_user_profile(user_id):
-    conn = sqlite3.connect('federated_learning.db')
-    c = conn.cursor()
-    
-    c.execute('SELECT id, username, email, created_at FROM users WHERE id = ?', (user_id,))
-    user = c.fetchone()
-    conn.close()
-    
-    if not user:
-        return None
-    
-    return {
-        'id': user[0],
-        'username': user[1],
-        'email': user[2],
-        'created_at': user[3]
-    }
-
-def update_profile(user_id, email):
-    try:
-        conn = sqlite3.connect('federated_learning.db')
-        c = conn.cursor()
-        
-        c.execute('UPDATE users SET email = ? WHERE id = ?', (email, user_id))
-        conn.commit()
-        conn.close()
-        return True
-        
-    except Exception:
-        return False
-
-def log_user_action(user_id, action_type, details=None):
-    try:
-        conn = sqlite3.connect('federated_learning.db')
-        c = conn.cursor()
-        
-        c.execute('''
-            INSERT INTO user_actions (user_id, action_type, details)
-            VALUES (?, ?, ?)
-        ''', (user_id, action_type, details))
-        
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        st.error(f"Error logging user action: {str(e)}")
-
-# Initialize database
-init_db()
-
-# Page functions
 def login_page():
     st.title("Login")
     
@@ -145,19 +38,24 @@ def login_page():
         submit = st.form_submit_button("Login")
         
         if submit:
-            user_id = verify_user(username, password)
-            if user_id:
+            response = requests.post(
+                f"{SERVER_URL}/verify_user",
+                json={"username": username, "password": password}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
                 st.session_state.authenticated = True
                 st.session_state.username = username
-                st.session_state.user_id = user_id
-                st.success("Login successful!")
-                st.rerun()
+                st.session_state.user_id = data['user_id']
+                st.rerun()  # This will trigger a complete page rerun
             else:
-                st.error("Invalid credentials")
+                st.error("Invalid username or password")
     
-    if st.button("Don't have an account? Register here"):
-        st.session_state.page = "register"
-        st.rerun()
+    if not st.session_state.authenticated:  # Only show register option if not authenticated
+        st.write("Don't have an account?")
+        if st.button("Register"):
+            st.session_state.show_register = True
 
 def register_page():
     st.title("Register")
@@ -166,173 +64,194 @@ def register_page():
         username = st.text_input("Username")
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
+        confirm_password = st.text_input("Confirm Password", type="password")
         submit = st.form_submit_button("Register")
         
         if submit:
-            if not all([username, email, password]):
-                st.error("All fields are required")
+            if password != confirm_password:
+                st.error("Passwords do not match!")
             else:
-                user_id, error = create_user(username, email, password)
-                if user_id:
+                response = requests.post(
+                    f"{SERVER_URL}/create_user",
+                    json={
+                        "username": username,
+                        "email": email,
+                        "password": password
+                    }
+                )
+                
+                if response.status_code == 201:
                     st.success("Registration successful! Please login.")
-                    st.session_state.page = "login"
-                    st.rerun()
+                    st.session_state.show_register = False
+                elif response.status_code == 409:
+                    st.error("Username or email already exists!")
                 else:
-                    st.error(f"Registration failed: {error}")
-    
-    if st.button("Already have an account? Login here"):
-        st.session_state.page = "login"
-        st.rerun()
+                    st.error("Registration failed. Please try again.")
 
 def profile_page():
     st.title("Profile")
     
-    user_data = get_user_profile(st.session_state.user_id)
-    if not user_data:
-        st.error("Could not load profile data")
+    if st.session_state.username:
+        try:
+            response = requests.get(
+                f"{SERVER_URL}/get_user_profile/{st.session_state.user_id}"
+            )
+            
+            if response.status_code == 200:
+                profile = response.json()
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Profile Information")
+                    st.write(f"Username: {profile['username']}")
+                    st.write(f"Email: {profile['email']}")
+                    st.write(f"Member since: {profile['created_at']}")
+                
+                with col2:
+                    st.subheader("Action History")
+                    actions_response = requests.get(
+                        f"{SERVER_URL}/get_user_actions/{st.session_state.user_id}"
+                    )
+                    
+                    if actions_response.status_code == 200:
+                        actions = actions_response.json()
+                        for action in actions:
+                            st.write(f"**{action['action_type']}** - {action['timestamp']}")
+                            if action['details']:
+                                st.write(f"Details: {action['details']}")
+                            st.write("---")
+                    else:
+                        st.error("Failed to load action history")
+            else:
+                st.error("Failed to load profile")
+                
+        except Exception as e:
+            st.error(f"Error loading profile: {str(e)}")
+
+def document_upload_page():
+    st.title("Document Upload")
+    
+    if not st.session_state.authenticated:
+        st.warning("Please login first to upload documents.")
         return
     
-    st.write(f"Username: {user_data['username']}")
+    st.write("### Upload your dataset")
+    st.write("Upload your data file to train a local model. The file should be in CSV format with the target variable.")
     
-    with st.form("update_profile"):
-        new_email = st.text_input("Email", value=user_data['email'])
-        submit = st.form_submit_button("Update Profile")
-        
-        if submit:
-            if update_profile(st.session_state.user_id, new_email):
-                st.success("Profile updated successfully")
-                log_user_action(st.session_state.user_id, "profile_update", f"Updated email to {new_email}")
-            else:
-                st.error("Failed to update profile")
+    uploaded_file = st.file_uploader("Choose a CSV file", type=['csv'])
+    
+    if uploaded_file is not None:
+        # Save the file
+        file_path = os.path.join('uploads', f"{st.session_state.user_id}_{uploaded_file.name}")
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+            
+        if st.button("Train Model"):
+            try:
+                # Initialize and train model
+                model = HeartDiseaseModel()
+                model.train(file_path)
+                st.session_state.local_model = model
+                
+                # Evaluate local model
+                accuracy = model.evaluate('data/test_heart_disease.csv')
+                st.success(f"Local model trained successfully! Test accuracy: {accuracy * 100:.2f}%")
+                
+                # Submit weights to server
+                weights = model.get_weights()
+                response = requests.post(
+                    f"{SERVER_URL}/submit_weights",
+                    json={
+                        'weights': weights,
+                        'user_id': st.session_state.user_id
+                    }
+                )
+                
+                if response.status_code == 200:
+                    st.success("Model weights submitted to server successfully!")
+                else:
+                    st.error("Failed to submit weights to server")
+                    
+            except Exception as e:
+                st.error(f"Error during training: {str(e)}")
 
-def upload_data_page():
-    st.title("Upload Data")
+def inference_page():
+    st.title("Make Predictions")
     
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    if not st.session_state.authenticated:
+        st.warning("Please login first to use the inference service.")
+        return
+    
+    st.write("### Upload data for prediction")
+    st.write("Upload a CSV file containing patient data (without the target variable) to get predictions.")
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type=['csv'])
+    
     if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
+            data = pd.read_csv(uploaded_file)
             st.write("Preview of uploaded data:")
-            st.write(df.head())
+            st.dataframe(data.head())
             
-            # Initialize model with uploaded data
-            st.session_state.local_model = HeartDiseaseModel(df)
-            st.success("Data uploaded and model initialized successfully!")
-            log_user_action(st.session_state.user_id, "data_upload", f"Uploaded file: {uploaded_file.name}")
-            
+            if st.button("Get Predictions"):
+                prediction_data = {
+                    "user_id": st.session_state.user_id,
+                    "features": data.to_dict('records')
+                }
+                
+                response = requests.post(f"{SERVER_URL}/predict", json=prediction_data)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    results_df = pd.DataFrame({
+                        'Prediction': result["predictions"],
+                        'Interpretation': result["messages"]
+                    })
+                    
+                    st.write("### Prediction Results")
+                    st.dataframe(results_df)
+                    
+                    csv = results_df.to_csv(index=False)
+                    st.download_button(
+                        "Download Results",
+                        csv,
+                        "predictions.csv",
+                        "text/csv"
+                    )
+                else:
+                    st.error(f"Error making prediction: {response.json().get('error', 'Unknown error')}")
+                    
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
 
-def prediction_page():
-    st.title("Make Prediction")
-    
-    if st.session_state.local_model is None:
-        st.warning("Please upload data first to initialize the model.")
-        return
-    
-    st.write("Enter patient information:")
-    
-    with st.form("prediction_form"):
-        age = st.number_input("Age", min_value=0, max_value=120)
-        sex = st.selectbox("Sex", ["Male", "Female"])
-        cp = st.selectbox("Chest Pain Type", ["Typical Angina", "Atypical Angina", "Non-anginal Pain", "Asymptomatic"])
-        trestbps = st.number_input("Resting Blood Pressure", min_value=0, max_value=300)
-        chol = st.number_input("Cholesterol", min_value=0, max_value=1000)
-        fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl", ["Yes", "No"])
-        restecg = st.selectbox("Resting ECG Results", ["Normal", "ST-T Wave Abnormality", "Left Ventricular Hypertrophy"])
-        thalach = st.number_input("Maximum Heart Rate", min_value=0, max_value=300)
-        exang = st.selectbox("Exercise Induced Angina", ["Yes", "No"])
-        oldpeak = st.number_input("ST Depression", min_value=0.0, max_value=10.0, step=0.1)
-        slope = st.selectbox("Slope of Peak Exercise ST Segment", ["Upsloping", "Flat", "Downsloping"])
-        ca = st.number_input("Number of Major Vessels", min_value=0, max_value=4)
-        thal = st.selectbox("Thalassemia", ["Normal", "Fixed Defect", "Reversible Defect"])
-        
-        submit = st.form_submit_button("Make Prediction")
-        
-        if submit:
-            # Convert categorical inputs to numerical
-            sex_map = {"Male": 1, "Female": 0}
-            cp_map = {"Typical Angina": 0, "Atypical Angina": 1, "Non-anginal Pain": 2, "Asymptomatic": 3}
-            fbs_map = {"Yes": 1, "No": 0}
-            restecg_map = {"Normal": 0, "ST-T Wave Abnormality": 1, "Left Ventricular Hypertrophy": 2}
-            exang_map = {"Yes": 1, "No": 0}
-            slope_map = {"Upsloping": 0, "Flat": 1, "Downsloping": 2}
-            thal_map = {"Normal": 1, "Fixed Defect": 2, "Reversible Defect": 3}
-            
-            # Create input data
-            input_data = pd.DataFrame({
-                'age': [age],
-                'sex': [sex_map[sex]],
-                'cp': [cp_map[cp]],
-                'trestbps': [trestbps],
-                'chol': [chol],
-                'fbs': [fbs_map[fbs]],
-                'restecg': [restecg_map[restecg]],
-                'thalach': [thalach],
-                'exang': [exang_map[exang]],
-                'oldpeak': [oldpeak],
-                'slope': [slope_map[slope]],
-                'ca': [ca],
-                'thal': [thal_map[thal]]
-            })
-            
-            try:
-                prediction = st.session_state.local_model.predict(input_data)
-                probability = st.session_state.local_model.predict_proba(input_data)
-                
-                if prediction[0] == 1:
-                    st.error(f"Heart Disease Detected (Probability: {probability[0][1]:.2%})")
-                else:
-                    st.success(f"No Heart Disease Detected (Probability: {probability[0][0]:.2%})")
-                
-                log_user_action(
-                    st.session_state.user_id,
-                    "prediction",
-                    f"Prediction made: {prediction[0]} (Probability: {max(probability[0]):.2%})"
-                )
-                
-            except Exception as e:
-                st.error(f"Error making prediction: {str(e)}")
-
 def main():
-    st.set_page_config(
-        page_title="Medical Analysis App",
-        page_icon="🏥",
-        layout="wide"
-    )
+    st.sidebar.title("Navigation")
     
-    # Initialize page state
-    if 'page' not in st.session_state:
-        st.session_state.page = "login"
-    
-    # Navigation
-    if not st.session_state.authenticated:
-        if st.session_state.page == "register":
-            register_page()
-        else:
-            login_page()
-    else:
-        # Sidebar navigation
-        st.sidebar.title(f"Welcome, {st.session_state.username}!")
+    if st.session_state.authenticated:
+        st.sidebar.write(f"Welcome, {st.session_state.username}!")
         
-        navigation = st.sidebar.radio(
-            "Navigation",
-            ["Profile", "Upload Data", "Make Prediction", "Logout"]
+        page = st.sidebar.radio(
+            "Select Page",
+            ["Profile", "Document Upload", "Make Predictions"]
         )
         
-        if navigation == "Profile":
-            profile_page()
-        elif navigation == "Upload Data":
-            upload_data_page()
-        elif navigation == "Make Prediction":
-            prediction_page()
-        elif navigation == "Logout":
+        if st.sidebar.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = None
             st.session_state.user_id = None
-            st.session_state.local_model = None
-            st.session_state.page = "login"
-            st.rerun()
+        
+        if page == "Profile":
+            profile_page()
+        elif page == "Document Upload":
+            document_upload_page()
+        elif page == "Make Predictions":
+            inference_page()
+    else:
+        st.sidebar.write("Please login to access the app")
+        if hasattr(st.session_state, 'show_register') and st.session_state.show_register:
+            register_page()
+        else:
+            login_page()
 
 if __name__ == "__main__":
     main() 
