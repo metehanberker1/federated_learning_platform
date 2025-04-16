@@ -15,63 +15,95 @@ def create_model():
         class_weight='balanced',  # Handle class imbalance
         max_iter=1000
     )
-    model.classes_ = np.arange(13)  # Initially 13 classes
-    model.coef_ = np.zeros((2, 13))  # Coefficient matrix
-    model.intercept_ = np.zeros(2)    # Intercept vector
+    model.classes_ = np.array([0, 1])  # Binary classification
+    model.coef_ = np.zeros((1, 13))  # Coefficient matrix for 13 features
+    model.intercept_ = np.zeros(1)    # Intercept vector
     return model
 
 class HeartDiseaseModel:
-    def __init__(self, csv_path=None):
+    def __init__(self, data=None):
         self.model = create_model()
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy='mean')
-        if csv_path:
-            self.initialize_with_data(csv_path)
+        if data is not None:
+            self.initialize_with_data(data)
 
-    def initialize_with_data(self, csv_path):
-        data = pd.read_csv(csv_path)
-        X = data.drop('target', axis=1)
-        y = data['target']
+    def initialize_with_data(self, data):
+        """Initialize the model with either a DataFrame or a path to a CSV file."""
+        if isinstance(data, str):
+            # If data is a string, assume it's a file path
+            data = pd.read_csv(data)
+        elif not isinstance(data, pd.DataFrame):
+            raise ValueError("data must be either a DataFrame or a path to a CSV file")
         
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # Ensure the DataFrame has the required columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
+        
+        if 'target' in data.columns:
+            X = data[required_columns]
+            y = data['target']
+        else:
+            X = data[required_columns]
+            y = None  # For prediction only
         
         # Fit imputer and scaler
-        X_train_imputed = self.imputer.fit_transform(X_train)
-        X_train_scaled = self.scaler.fit_transform(X_train_imputed)
+        X_imputed = self.imputer.fit_transform(X)
+        X_scaled = self.scaler.fit_transform(X_imputed)
         
-        # Train model
-        self.model.fit(X_train_scaled, y_train)
+        if y is not None:
+            # Train model if target is available
+            self.model.fit(X_scaled, y)
         
         return self
 
     def preprocess_data(self, X):
+        """Preprocess the input data using fitted imputer and scaler."""
+        if not hasattr(self.imputer, 'statistics_') or not hasattr(self.scaler, 'mean_'):
+            raise ValueError("Model has not been initialized with data. Call initialize_with_data first.")
+        
         # Handle missing values and scale features
         X_imputed = self.imputer.transform(X)
         X_scaled = self.scaler.transform(X_imputed)
         return X_scaled
 
-    def train(self, csv_path):
-        data = pd.read_csv(csv_path)
-        X = data.drop('target', axis=1)
-        y = data['target']
+    def predict(self, X):
+        """Make predictions on new data."""
+        # Ensure X has the correct columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
         
-        # Fit imputer and scaler if not already fitted
-        if not hasattr(self.imputer, 'statistics_'):
-            X_imputed = self.imputer.fit_transform(X)
-            X_scaled = self.scaler.fit_transform(X_imputed)
-        else:
-            # Use existing imputer and scaler
-            X_imputed = self.imputer.transform(X)
-            X_scaled = self.scaler.transform(X_imputed)
+        if not all(col in X.columns for col in required_columns):
+            raise ValueError(f"Input data must contain all required columns: {required_columns}")
         
-        # Train model
-        self.model.fit(X_scaled, y)
+        # Preprocess data
+        X = X[required_columns]  # Ensure correct column order
+        X_processed = self.preprocess_data(X)
         
-        return self
+        # Make predictions
+        return self.model.predict(X_processed)
     
-    def evaluate(self, test_csv_path):
-        test_data = pd.read_csv(test_csv_path)
+    def predict_proba(self, X):
+        """Get probability estimates for predictions."""
+        # Ensure X has the correct columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
+        
+        if not all(col in X.columns for col in required_columns):
+            raise ValueError(f"Input data must contain all required columns: {required_columns}")
+        
+        # Preprocess data
+        X = X[required_columns]  # Ensure correct column order
+        X_processed = self.preprocess_data(X)
+        
+        # Get probability estimates
+        return self.model.predict_proba(X_processed)
+
+    def evaluate(self, test_data):
+        """Evaluate the model on test data."""
+        if isinstance(test_data, str):
+            test_data = pd.read_csv(test_data)
+        
         X_test = test_data.drop('target', axis=1)
         y_test = test_data['target']
         
@@ -85,30 +117,25 @@ class HeartDiseaseModel:
         accuracy = accuracy_score(y_test, y_pred)
         return accuracy
 
-    def predict(self, X):
-        # Preprocess data
-        X_processed = self.preprocess_data(X)
-        
-        # Make predictions
-        return self.model.predict(X_processed)
-
     def get_weights(self):
-        # Convert numpy arrays to lists for JSON serialization
+        """Get model weights for federated learning."""
         return {
             'coef': self.model.coef_.tolist(),
             'intercept': self.model.intercept_.tolist()
         }
 
     def set_weights(self, weights):
-        # Convert lists back to numpy arrays
+        """Set model weights for federated learning."""
         self.model.coef_ = np.array(weights['coef'])
         self.model.intercept_ = np.array(weights['intercept'])
 
     def save(self, path):
+        """Save the model to a file."""
         joblib.dump(self, path)
     
     @staticmethod
     def load(path):
+        """Load the model from a file."""
         return joblib.load(path)
 
 class HospitalClient(fl.client.NumPyClient):

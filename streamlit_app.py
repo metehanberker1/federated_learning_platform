@@ -223,17 +223,36 @@ def upload_data_page():
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     if uploaded_file is not None:
         try:
+            # Read the CSV file
             df = pd.read_csv(uploaded_file)
+            
+            # Check if the DataFrame has all required columns
+            required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                              'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal', 'target']
+            
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                st.write("The CSV file must contain the following columns:")
+                st.write(required_columns)
+                return
+            
+            # Display preview of the data
             st.write("Preview of uploaded data:")
             st.write(df.head())
             
-            # Initialize model with uploaded data
-            st.session_state.local_model = HeartDiseaseModel(df)
-            st.success("Data uploaded and model initialized successfully!")
-            log_user_action(st.session_state.user_id, "data_upload", f"Uploaded file: {uploaded_file.name}")
+            # Initialize model with the data
+            try:
+                st.session_state.local_model = HeartDiseaseModel(df)
+                st.success("Data uploaded and model initialized successfully!")
+                log_user_action(st.session_state.user_id, "data_upload", f"Uploaded file: {uploaded_file.name}")
+            except Exception as e:
+                st.error(f"Error initializing model: {str(e)}")
             
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
+            st.write("Please ensure your CSV file is properly formatted and contains all required columns.")
 
 def prediction_page():
     st.title("Make Prediction")
