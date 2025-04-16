@@ -8,12 +8,21 @@ import os
 from model import HeartDiseaseModel
 import json
 
+# Load custom CSS
+def load_css():
+    with open('.streamlit/style.css') as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+
 # Set page configuration
 st.set_page_config(
-    page_title="Medical Analysis App",
-    page_icon="🏥",
-    layout="wide"
+    page_title="Heart Disease Prediction Platform",
+    page_icon="❤️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Load custom CSS
+load_css()
 
 # Create uploads directory if it doesn't exist
 if not os.path.exists('uploads'):

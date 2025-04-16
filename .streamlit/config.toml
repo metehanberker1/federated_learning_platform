@@ -1,8 +1,17 @@
 [theme]
-primaryColor = "#FF4B4B"
+# Medical blue as primary color
+primaryColor = "#0077B6"
+
+# Clean white background
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#262730"
+
+# Light blue tint for secondary elements
+secondaryBackgroundColor = "#E6F3F8"
+
+# Dark blue for text
+textColor = "#1A374D"
+
+# Modern, clean font
 font = "sans serif"
 
 [server]

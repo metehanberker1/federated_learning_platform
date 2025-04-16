@@ -1,0 +1,124 @@
+/* Main content styling */
+.main {
+    padding: 2rem;
+}
+
+/* Title styling */
+.css-10trblm {
+    color: #0077B6;
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+/* Sidebar styling */
+.css-1d391kg {
+    background-color: #E6F3F8;
+    padding: 2rem 1rem;
+}
+
+/* Form styling */
+.stForm {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Button styling */
+.stButton>button {
+    background-color: #0077B6;
+    color: white;
+    border-radius: 25px;
+    padding: 0.5rem 2rem;
+    font-weight: 600;
+    border: none;
+    transition: all 0.3s ease;
+}
+
+.stButton>button:hover {
+    background-color: #005B8C;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Success message styling */
+.element-container .stAlert.success {
+    background-color: #E3F6E6;
+    color: #0C6B1D;
+    border: none;
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+/* Error message styling */
+.element-container .stAlert.error {
+    background-color: #FFE9E9;
+    color: #B42318;
+    border: none;
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+/* DataFrame/table styling */
+.dataframe {
+    border: none !important;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dataframe thead th {
+    background-color: #0077B6 !important;
+    color: white !important;
+    padding: 1rem !important;
+}
+
+.dataframe tbody tr:nth-child(even) {
+    background-color: #F8FBFD;
+}
+
+/* Input field styling */
+.stTextInput>div>div>input, .stNumberInput>div>div>input {
+    border-radius: 5px;
+    border: 1px solid #E6F3F8;
+    padding: 0.5rem 1rem;
+}
+
+/* Select box styling */
+.stSelectbox>div>div>select {
+    border-radius: 5px;
+    border: 1px solid #E6F3F8;
+    padding: 0.5rem 1rem;
+}
+
+/* File uploader styling */
+.stFileUploader {
+    background-color: #F8FBFD;
+    padding: 2rem;
+    border-radius: 10px;
+    border: 2px dashed #0077B6;
+    text-align: center;
+}
+
+/* Progress bar styling */
+.stProgress > div > div > div {
+    background-color: #0077B6;
+}
+
+/* Card-like containers */
+.css-1r6slb0 {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+/* Medical icon styling */
+.css-1v0mbdj img {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 1rem;
+} 
