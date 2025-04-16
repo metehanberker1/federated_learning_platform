@@ -8,7 +8,6 @@ import os
 from model import HeartDiseaseModel
 import json
 import base64
-import requests
 
 # Load custom CSS
 def load_css():
@@ -251,15 +250,11 @@ def login_page():
                 submit = st.form_submit_button("Login")
                 
                 if submit:
-                    response = requests.post(
-                        "http://localhost:5000/login",
-                        json={"username": username, "password": password}
-                    )
-                    
-                    if response.status_code == 200:
+                    user_id = verify_user(username, password)
+                    if user_id:
                         st.session_state.logged_in = True
                         st.session_state.username = username
-                        st.session_state.user_id = verify_user(username, password)
+                        st.session_state.user_id = user_id
                         st.success("Login successful!")
                         st.experimental_rerun()
                     else:
@@ -303,17 +298,13 @@ def register_page():
                     elif password != confirm_password:
                         st.error("Passwords do not match")
                     else:
-                        response = requests.post(
-                            "http://localhost:5000/register",
-                            json={"username": username, "password": password}
-                        )
-                        
-                        if response.status_code == 201:
+                        user_id, error = create_user(username, email, password)
+                        if user_id:
                             st.success("Registration successful! Please login.")
                             st.session_state.page = "login"
                             st.rerun()
                         else:
-                            st.error("Username already exists")
+                            st.error(error)
             
             st.markdown("""
                 <div class="login-prompt">
