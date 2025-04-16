@@ -33,16 +33,16 @@ def add_hero_section():
         <div class="hero-container">
             <div class="hero-content">
                 <div class="hero-text">
-                    <div class="hero-subtitle">AI-Powered Healthcare</div>
-                    <h1>Early Heart Disease Detection Using Machine Learning</h1>
+                    <div class="hero-subtitle">Advanced Federated Learning Platform</div>
+                    <h1>Collaborative Medical AI for Better Healthcare</h1>
                     <p class="hero-description">
-                        Our advanced AI system analyzes your health data to predict potential heart disease risks.
-                        Get accurate predictions and expert recommendations for a healthier heart.
+                        Join our federated learning network to develop and improve AI models for various medical conditions.
+                        Contribute to breakthrough discoveries while maintaining data privacy and security.
                     </p>
                 </div>
                 <div class="hero-image">
-                    <img src="https://img.freepik.com/free-vector/doctor-examining-patient-illustrated_23-2148856559.jpg" 
-                         alt="Doctor with patient illustration">
+                    <img src="https://img.freepik.com/free-vector/medical-technology-science-background-vector-health-digital-remix_53876-117739.jpg" 
+                         alt="Medical AI Technology Illustration">
                 </div>
             </div>
             <svg class="wave-bottom" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 120">
@@ -73,29 +73,29 @@ def add_features_section():
     st.markdown("""
         <div class="features-container">
             <div class="feature-card">
-                <i class="fas fa-heartbeat"></i>
-                <h3>Heart Disease Prediction</h3>
-                <p>Get accurate predictions about potential heart disease risks using our advanced AI model.</p>
+                <i class="fas fa-network-wired"></i>
+                <h3>Federated Learning</h3>
+                <p>Train AI models collaboratively while keeping sensitive medical data secure and private on local systems.</p>
             </div>
             <div class="feature-card">
-                <i class="fas fa-user-md"></i>
-                <h3>Expert Consultation</h3>
-                <p>Connect with experienced healthcare professionals for personalized advice.</p>
+                <i class="fas fa-user-shield"></i>
+                <h3>Privacy Focused</h3>
+                <p>Advanced privacy-preserving techniques ensure your medical data never leaves your local environment.</p>
             </div>
             <div class="feature-card">
-                <i class="fas fa-chart-line"></i>
-                <h3>Health Monitoring</h3>
-                <p>Track your heart health metrics over time and receive regular updates.</p>
+                <i class="fas fa-brain"></i>
+                <h3>Medical AI Models</h3>
+                <p>Develop and improve various medical AI models through collaborative learning across institutions.</p>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
 # Set page configuration
 st.set_page_config(
-    page_title="Heart Disease Prediction Platform",
-    page_icon="❤️",
+    page_title="Medical Federated Learning Platform",
+    page_icon="🏥",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # Load custom CSS
@@ -105,7 +105,7 @@ load_css()
 if not os.path.exists('uploads'):
     os.makedirs('uploads')
 
-# Initialize session state
+# Initialize session state variables
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'username' not in st.session_state:
@@ -449,6 +449,22 @@ def prediction_page():
             except Exception as e:
                 st.error(f"Error making prediction: {str(e)}")
 
+def show_sidebar():
+    with st.sidebar:
+        st.markdown(f"""
+            <div style='text-align: center; padding: 1rem;'>
+                <h3>Welcome, {st.session_state.username}! 👋</h3>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        navigation = st.radio(
+            "",
+            ["Profile", "Upload Data", "Make Prediction", "Logout"],
+            key="nav"
+        )
+        
+        return navigation
+
 def main():
     if not st.session_state.logged_in:
         if st.session_state.page == "register":
@@ -456,20 +472,10 @@ def main():
         else:
             login_page()
     else:
-        # Sidebar navigation
-        with st.sidebar:
-            st.markdown(f"""
-                <div style='text-align: center; padding: 1rem;'>
-                    <h3>Welcome, {st.session_state.username}! 👋</h3>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            navigation = st.radio(
-                "",
-                ["Profile", "Upload Data", "Make Prediction", "Logout"],
-                key="nav"
-            )
+        # Always show sidebar when logged in
+        navigation = show_sidebar()
         
+        # Main content area
         if navigation == "Profile":
             profile_page()
         elif navigation == "Upload Data":
