@@ -7,18 +7,96 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from model import HeartDiseaseModel
 import json
+import base64
+import requests
 
 # Load custom CSS
 def load_css():
     with open('.streamlit/style.css') as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    
+    # Add custom Google Fonts
+    st.markdown("""
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    """, unsafe_allow_html=True)
+
+def add_logo():
+    st.markdown("""
+        <div class="logo-container">
+            <i class="fas fa-heartbeat"></i>
+            <span>HeartCare AI</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+def add_hero_section():
+    st.markdown("""
+        <div class="hero-container">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <div class="hero-subtitle">AI-Powered Healthcare</div>
+                    <h1>Early Heart Disease Detection Using Machine Learning</h1>
+                    <p class="hero-description">
+                        Our advanced AI system analyzes your health data to predict potential heart disease risks.
+                        Get accurate predictions and expert recommendations for a healthier heart.
+                    </p>
+                </div>
+                <div class="hero-image">
+                    <img src="https://img.freepik.com/free-vector/doctor-examining-patient-illustrated_23-2148856559.jpg" 
+                         alt="Doctor with patient illustration">
+                </div>
+            </div>
+            <svg class="wave-bottom" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 120">
+                <path fill="#ffffff" fill-opacity="1" d="M0,32L60,42.7C120,53,240,75,360,74.7C480,75,600,53,720,48C840,43,960,53,1080,58.7C1200,64,1320,64,1380,64L1440,64L1440,120L1380,120C1320,120,1200,120,1080,120C960,120,840,120,720,120C600,120,480,120,360,120C240,120,120,120,60,120L0,120Z"></path>
+            </svg>
+        </div>
+    """, unsafe_allow_html=True)
+
+def add_navigation():
+    st.markdown("""
+        <nav class="navigation">
+            <div class="nav-links">
+                <a href="#" class="active">Home</a>
+                <a href="#">About Us</a>
+                <a href="#">Services</a>
+                <a href="#">Contact</a>
+            </div>
+            <div class="nav-contact">
+                <span class="hotline">
+                    <i class="fas fa-phone-alt"></i>
+                    Hotline: 1-800-HEART
+                </span>
+            </div>
+        </nav>
+    """, unsafe_allow_html=True)
+
+def add_features_section():
+    st.markdown("""
+        <div class="features-container">
+            <div class="feature-card">
+                <i class="fas fa-heartbeat"></i>
+                <h3>Heart Disease Prediction</h3>
+                <p>Get accurate predictions about potential heart disease risks using our advanced AI model.</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-user-md"></i>
+                <h3>Expert Consultation</h3>
+                <p>Connect with experienced healthcare professionals for personalized advice.</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-chart-line"></i>
+                <h3>Health Monitoring</h3>
+                <p>Track your heart health metrics over time and receive regular updates.</p>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 # Set page configuration
 st.set_page_config(
     page_title="Heart Disease Prediction Platform",
     page_icon="❤️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Load custom CSS
@@ -29,8 +107,8 @@ if not os.path.exists('uploads'):
     os.makedirs('uploads')
 
 # Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 if 'username' not in st.session_state:
     st.session_state.username = None
 if 'user_id' not in st.session_state:
@@ -158,52 +236,98 @@ def log_user_action(user_id, action_type, details=None):
 init_db()
 
 def login_page():
-    st.title("Login")
+    add_logo()
+    add_navigation()
+    add_hero_section()
     
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-        
-        if submit:
-            user_id = verify_user(username, password)
-            if user_id:
-                st.session_state.authenticated = True
-                st.session_state.username = username
-                st.session_state.user_id = user_id
-                st.success("Login successful!")
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("<h2 class='form-title'>Login to Your Account</h2>", unsafe_allow_html=True)
+            
+            with st.form("login_form", clear_on_submit=True):
+                username = st.text_input("Username")
+                password = st.text_input("Password", type="password")
+                submit = st.form_submit_button("Login")
+                
+                if submit:
+                    response = requests.post(
+                        "http://localhost:5000/login",
+                        json={"username": username, "password": password}
+                    )
+                    
+                    if response.status_code == 200:
+                        st.session_state.logged_in = True
+                        st.session_state.username = username
+                        st.session_state.user_id = verify_user(username, password)
+                        st.success("Login successful!")
+                        st.experimental_rerun()
+                    else:
+                        st.error("Invalid username or password")
+            
+            st.markdown("""
+                <div class="register-prompt">
+                    <p>Don't have an account?</p>
+                    <button class="register-link" onclick="handleRegisterClick()">
+                        Register Here
+                    </button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Hidden button for JavaScript interaction
+            if st.button("Register", key="register_button", help=None):
+                st.session_state.page = "register"
                 st.rerun()
-            else:
-                st.error("Invalid credentials")
     
-    if st.button("Don't have an account? Register here"):
-        st.session_state.page = "register"
-        st.rerun()
+    add_features_section()
 
 def register_page():
-    st.title("Register")
+    add_logo()
+    add_navigation()
     
-    with st.form("register_form"):
-        username = st.text_input("Username")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Register")
-        
-        if submit:
-            if not all([username, email, password]):
-                st.error("All fields are required")
-            else:
-                user_id, error = create_user(username, email, password)
-                if user_id:
-                    st.success("Registration successful! Please login.")
-                    st.session_state.page = "login"
-                    st.rerun()
-                else:
-                    st.error(f"Registration failed: {error}")
-    
-    if st.button("Already have an account? Login here"):
-        st.session_state.page = "login"
-        st.rerun()
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("<h2 class='form-title'>Create Your Account</h2>", unsafe_allow_html=True)
+            
+            with st.form("register_form"):
+                username = st.text_input("Username")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                confirm_password = st.text_input("Confirm Password", type="password")
+                submit = st.form_submit_button("Register")
+                
+                if submit:
+                    if not all([username, email, password, confirm_password]):
+                        st.error("All fields are required")
+                    elif password != confirm_password:
+                        st.error("Passwords do not match")
+                    else:
+                        response = requests.post(
+                            "http://localhost:5000/register",
+                            json={"username": username, "password": password}
+                        )
+                        
+                        if response.status_code == 201:
+                            st.success("Registration successful! Please login.")
+                            st.session_state.page = "login"
+                            st.rerun()
+                        else:
+                            st.error("Username already exists")
+            
+            st.markdown("""
+                <div class="login-prompt">
+                    <p>Already have an account?</p>
+                    <button class="login-link" onclick="handleLoginClick()">
+                        Login Here
+                    </button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Hidden button for JavaScript interaction
+            if st.button("Login", key="login_button", help=None):
+                st.session_state.page = "login"
+                st.rerun()
 
 def profile_page():
     st.title("Profile")
@@ -335,20 +459,25 @@ def prediction_page():
                 st.error(f"Error making prediction: {str(e)}")
 
 def main():
-    # Navigation
-    if not st.session_state.authenticated:
+    if not st.session_state.logged_in:
         if st.session_state.page == "register":
             register_page()
         else:
             login_page()
     else:
         # Sidebar navigation
-        st.sidebar.title(f"Welcome, {st.session_state.username}!")
-        
-        navigation = st.sidebar.radio(
-            "Navigation",
-            ["Profile", "Upload Data", "Make Prediction", "Logout"]
-        )
+        with st.sidebar:
+            st.markdown(f"""
+                <div style='text-align: center; padding: 1rem;'>
+                    <h3>Welcome, {st.session_state.username}! 👋</h3>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            navigation = st.radio(
+                "",
+                ["Profile", "Upload Data", "Make Prediction", "Logout"],
+                key="nav"
+            )
         
         if navigation == "Profile":
             profile_page()
@@ -357,7 +486,7 @@ def main():
         elif navigation == "Make Prediction":
             prediction_page()
         elif navigation == "Logout":
-            st.session_state.authenticated = False
+            st.session_state.logged_in = False
             st.session_state.username = None
             st.session_state.user_id = None
             st.session_state.local_model = None

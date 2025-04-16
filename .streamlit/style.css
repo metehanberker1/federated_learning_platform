@@ -1,52 +1,329 @@
-/* Main content styling */
-.main {
-    padding: 2rem;
+/* Global styles */
+:root {
+    --primary-blue: #4285F4;
+    --dark-blue: #1a73e8;
+    --light-blue: #F8FAFF;
+    --text-color: #2D3748;
 }
 
-/* Title styling */
-.css-10trblm {
-    color: #0077B6;
-    font-size: 2.5rem;
-    font-weight: 700;
-    margin-bottom: 2rem;
+body {
+    font-family: 'Inter', sans-serif;
+    color: var(--text-color);
+    background-color: white;
+}
+
+/* Logo styling */
+.logo-container {
+    display: flex;
+    align-items: center;
+    padding: 1rem 2rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.logo-container i {
+    color: var(--primary-blue);
+    margin-right: 0.5rem;
+    font-size: 1.8rem;
+}
+
+/* Navigation styling */
+.navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background-color: white;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.nav-links a {
+    color: var(--text-color);
+    text-decoration: none;
+    margin-right: 2rem;
+    font-weight: 500;
+}
+
+.nav-links a.active {
+    color: var(--primary-blue);
+}
+
+.nav-contact .hotline {
+    background-color: var(--primary-blue);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 25px;
+    font-weight: 500;
+}
+
+/* Hero section styling */
+.hero-container {
+    position: relative;
+    background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%);
+    padding: 4rem 2rem;
+    overflow: hidden;
+}
+
+.hero-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.hero-text {
+    flex: 1;
+    padding-right: 2rem;
+}
+
+.hero-text h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 3.5rem;
+    line-height: 1.2;
+    margin: 1rem 0;
+    color: var(--text-color);
+}
+
+.hero-subtitle {
+    color: var(--primary-blue);
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.hero-description {
+    color: #718096;
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin: 1.5rem 0;
+}
+
+.hero-image {
+    flex: 1;
+    text-align: right;
+}
+
+.hero-image img {
+    max-width: 100%;
+    height: auto;
+}
+
+.wave-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+}
+
+/* Features section styling */
+.features-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    padding: 4rem 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.feature-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     text-align: center;
 }
 
-/* Sidebar styling */
-.css-1d391kg {
-    background-color: #E6F3F8;
-    padding: 2rem 1rem;
+.feature-card i {
+    font-size: 2.5rem;
+    color: var(--primary-blue);
+    margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    color: var(--text-color);
+}
+
+.feature-card p {
+    color: #718096;
+    line-height: 1.6;
 }
 
 /* Form styling */
+.form-title {
+    text-align: center;
+    color: var(--text-color);
+    margin: 2rem 0;
+    font-size: 2rem;
+}
+
 .stForm {
     background-color: white;
     padding: 2rem;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Input styling */
+.stTextInput>div>div>input,
+.stNumberInput>div>div>input,
+.stSelectbox>div>div>select {
+    border-radius: 8px !important;
+    border: 1px solid #E2E8F0 !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 1rem !important;
+    width: 100% !important;
 }
 
 /* Button styling */
 .stButton>button {
-    background-color: #0077B6;
-    color: white;
-    border-radius: 25px;
-    padding: 0.5rem 2rem;
-    font-weight: 600;
-    border: none;
-    transition: all 0.3s ease;
+    background-color: var(--primary-blue) !important;
+    color: white !important;
+    padding: 0.75rem 2rem !important;
+    border-radius: 25px !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    border: none !important;
+    transition: all 0.3s ease !important;
+    width: 100% !important;
 }
 
 .stButton>button:hover {
-    background-color: #005B8C;
+    background-color: var(--dark-blue) !important;
     transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
+}
+
+/* Login/Register prompt styling */
+.register-prompt,
+.login-prompt {
+    text-align: center;
+    margin-top: 1.5rem;
+}
+
+.register-link,
+.login-link {
+    background: none;
+    border: none;
+    color: var(--primary-blue);
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    font-size: 1rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .hero-content {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .hero-text {
+        padding-right: 0;
+        margin-bottom: 2rem;
+    }
+    
+    .features-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .navigation {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .nav-links {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 1rem;
+    }
+    
+    .nav-links a {
+        margin-right: 0;
+    }
+}
+
+/* Hide Streamlit elements */
+#MainMenu {
+    display: none;
+}
+
+footer {
+    display: none;
+}
+
+header {
+    display: none;
+}
+
+/* Main container */
+.main {
+    padding: 0;
+    background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%);
+}
+
+/* Navigation bar styling */
+.css-1avcm0n {
+    background-color: white !important;
+    border-bottom: 1px solid rgba(49, 51, 63, 0.1);
+    padding: 1rem 2rem;
+}
+
+/* Header/Title section */
+.css-10trblm {
+    font-family: 'Playfair Display', serif;
+    color: var(--text-color);
+    font-size: 3.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 1rem;
+    text-align: left;
+}
+
+/* Subtitle styling */
+.css-10trblm + div {
+    color: #718096;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+}
+
+/* Sidebar styling */
+.css-1d391kg {
+    background-color: white;
+    padding: 2rem 1rem;
+}
+
+.css-1d391kg .stButton>button {
+    width: 100%;
+    text-align: center;
+}
+
+/* File uploader styling */
+.stFileUploader {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 15px;
+    border: 2px dashed var(--primary-blue);
+    text-align: center;
+}
+
+/* Card styling */
+.css-1r6slb0 {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 15px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
 }
 
 /* Success message styling */
 .element-container .stAlert.success {
-    background-color: #E3F6E6;
-    color: #0C6B1D;
+    background-color: #F0FDF4;
+    color: #166534;
     border: none;
     border-radius: 10px;
     padding: 1rem;
@@ -54,11 +331,36 @@
 
 /* Error message styling */
 .element-container .stAlert.error {
-    background-color: #FFE9E9;
-    color: #B42318;
+    background-color: #FEF2F2;
+    color: #991B1B;
     border: none;
     border-radius: 10px;
     padding: 1rem;
+}
+
+/* Custom styles for medical illustration */
+.medical-illustration {
+    max-width: 600px;
+    margin: 2rem auto;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .hero-section {
+        flex-direction: column;
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+    
+    .css-10trblm {
+        font-size: 2.5rem;
+        text-align: center;
+    }
+    
+    .medical-illustration {
+        max-width: 100%;
+        margin-top: 2rem;
+    }
 }
 
 /* DataFrame/table styling */
@@ -79,41 +381,9 @@
     background-color: #F8FBFD;
 }
 
-/* Input field styling */
-.stTextInput>div>div>input, .stNumberInput>div>div>input {
-    border-radius: 5px;
-    border: 1px solid #E6F3F8;
-    padding: 0.5rem 1rem;
-}
-
-/* Select box styling */
-.stSelectbox>div>div>select {
-    border-radius: 5px;
-    border: 1px solid #E6F3F8;
-    padding: 0.5rem 1rem;
-}
-
-/* File uploader styling */
-.stFileUploader {
-    background-color: #F8FBFD;
-    padding: 2rem;
-    border-radius: 10px;
-    border: 2px dashed #0077B6;
-    text-align: center;
-}
-
 /* Progress bar styling */
 .stProgress > div > div > div {
     background-color: #0077B6;
-}
-
-/* Card-like containers */
-.css-1r6slb0 {
-    background-color: white;
-    padding: 2rem;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    margin-bottom: 1rem;
 }
 
 /* Medical icon styling */
