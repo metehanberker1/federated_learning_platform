@@ -8,7 +8,6 @@ from sklearn.metrics import accuracy_score
 import joblib
 import json
 import flwr as fl
-import tensorflow as tf
 
 def create_model():
     model = LogisticRegression(
@@ -23,85 +22,82 @@ def create_model():
 
 class HeartDiseaseModel:
     def __init__(self, data=None):
-        self.model = self._build_model()
+        self.model = create_model()
         self.scaler = StandardScaler()
-        
+        self.imputer = SimpleImputer(strategy='mean')
         if data is not None:
-            self._prepare_data(data)
-    
-    def _build_model(self):
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64, activation='relu', input_shape=(13,)),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(16, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
+            self.initialize_with_data(data)
+
+    def initialize_with_data(self, data):
+        """Initialize the model with either a DataFrame or a path to a CSV file."""
+        if isinstance(data, str):
+            # If data is a string, assume it's a file path
+            data = pd.read_csv(data)
+        elif not isinstance(data, pd.DataFrame):
+            raise ValueError("data must be either a DataFrame or a path to a CSV file")
         
-        model.compile(
-            optimizer='adam',
-            loss='binary_crossentropy',
-            metrics=['accuracy']
-        )
+        # Ensure the DataFrame has the required columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
         
-        return model
-    
-    def _prepare_data(self, data):
-        """Prepare data for training"""
-        # Separate features and target
-        X = data.drop('target', axis=1)
-        y = data['target']
+        if 'target' in data.columns:
+            X = data[required_columns]
+            y = data['target']
+        else:
+            X = data[required_columns]
+            y = None  # For prediction only
         
-        # Scale features
-        self.X_train = self.scaler.fit_transform(X)
-        self.y_train = y.values
-    
-    def train_epoch(self):
-        """Train the model for one epoch and return the loss"""
-        if not hasattr(self, 'X_train'):
-            raise ValueError("No training data available. Please initialize with data first.")
+        # Fit imputer and scaler
+        X_imputed = self.imputer.fit_transform(X)
+        X_scaled = self.scaler.fit_transform(X_imputed)
         
-        history = self.model.fit(
-            self.X_train, self.y_train,
-            epochs=1,
-            batch_size=32,
-            verbose=0
-        )
+        if y is not None:
+            # Train model if target is available
+            self.model.fit(X_scaled, y)
         
-        return history.history['loss'][0]
-    
-    def get_weights(self):
-        """Get the model weights as a serializable format"""
-        weights = []
-        for layer in self.model.layers:
-            layer_weights = []
-            for w in layer.get_weights():
-                layer_weights.append(w.tolist())
-            weights.append(layer_weights)
-        return weights
-    
-    def set_weights(self, weights):
-        """Set the model weights from a serializable format"""
-        for layer, layer_weights in zip(self.model.layers, weights):
-            layer.set_weights([np.array(w) for w in layer_weights])
-    
-    def predict(self, data):
-        """Make predictions using the model"""
-        # Scale the input data
-        X = self.scaler.transform(data)
+        return self
+
+    def preprocess_data(self, X):
+        """Preprocess the input data using fitted imputer and scaler."""
+        if not hasattr(self.imputer, 'statistics_') or not hasattr(self.scaler, 'mean_'):
+            raise ValueError("Model has not been initialized with data. Call initialize_with_data first.")
         
-        # Make prediction
-        predictions = self.model.predict(X)
-        return (predictions > 0.5).astype(int)
-    
-    def predict_proba(self, data):
-        """Get prediction probabilities"""
-        # Scale the input data
-        X = self.scaler.transform(data)
+        # Handle missing values and scale features
+        X_imputed = self.imputer.transform(X)
+        X_scaled = self.scaler.transform(X_imputed)
+        return X_scaled
+
+    def predict(self, X):
+        """Make predictions on new data."""
+        # Ensure X has the correct columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
         
-        # Get probabilities
-        return self.model.predict(X)
+        if not all(col in X.columns for col in required_columns):
+            raise ValueError(f"Input data must contain all required columns: {required_columns}")
+        
+        # Preprocess data
+        X = X[required_columns]  # Ensure correct column order
+        X_processed = self.preprocess_data(X)
+        
+        # Make predictions
+        return self.model.predict(X_processed)
+    
+    def predict_proba(self, X):
+        """Get probability estimates for predictions."""
+        # Ensure X has the correct columns
+        required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                          'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
+        
+        if not all(col in X.columns for col in required_columns):
+            raise ValueError(f"Input data must contain all required columns: {required_columns}")
+        
+        # Preprocess data
+        X = X[required_columns]  # Ensure correct column order
+        X_processed = self.preprocess_data(X)
+        
+        # Get probability estimates
+        return self.model.predict_proba(X_processed)
 
     def evaluate(self, test_data):
         """Evaluate the model on test data."""
@@ -112,14 +108,26 @@ class HeartDiseaseModel:
         y_test = test_data['target']
         
         # Preprocess test data
-        X_test_processed = self.scaler.transform(X_test)
+        X_test_processed = self.preprocess_data(X_test)
         
         # Make predictions
-        y_pred = self.predict(X_test_processed)
+        y_pred = self.model.predict(X_test_processed)
         
         # Calculate accuracy
         accuracy = accuracy_score(y_test, y_pred)
         return accuracy
+
+    def get_weights(self):
+        """Get model weights for federated learning."""
+        return {
+            'coef': self.model.coef_.tolist(),
+            'intercept': self.model.intercept_.tolist()
+        }
+
+    def set_weights(self, weights):
+        """Set model weights for federated learning."""
+        self.model.coef_ = np.array(weights['coef'])
+        self.model.intercept_ = np.array(weights['intercept'])
 
     def save(self, path):
         """Save the model to a file."""
@@ -158,7 +166,7 @@ class HospitalClient(fl.client.NumPyClient):
         self.set_parameters(parameters)
         
         # Train model
-        self.model.train_epoch()
+        self.model.train(self.csv_path)
         
         # Return updated parameters and number of training samples
         return self.get_parameters(config), len(self.X_train), {}
