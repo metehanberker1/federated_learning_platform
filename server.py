@@ -8,30 +8,14 @@ import threading
 import time
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
-from flwr.common import secagg_mod
-from flwr.server.client_manager import SimpleClientManager
-from flwr.common import Parameters
-from flwr.server.client_proxy import ClientProxy
-import jwt
-from pathlib import Path
-from dotenv import load_dotenv
 
 app = Flask(__name__)
 
 # Initialize the global model with test data
 global_model = HeartDiseaseModel('data/test_heart_disease.csv')
 client_weights = []
-
-# Load environment variables
-load_dotenv()
-
-# Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
-MIN_CLIENTS = int(os.getenv("MIN_CLIENTS", "2"))
-NUM_ROUNDS = int(os.getenv("NUM_ROUNDS", "10"))
-SERVER_ADDRESS = os.getenv("SERVER_ADDRESS", "0.0.0.0:8080")
 
 def init_db():
     conn = sqlite3.connect('federated_learning.db')
@@ -208,55 +192,43 @@ def log_user_action(user_id, action_type, details=None):
     except Exception as e:
         print(f"Error logging user action: {str(e)}")
 
-class AuthClientManager(SimpleClientManager):
-    """Custom client manager that verifies JWT tokens."""
-    
-    def register(self, client: ClientProxy) -> bool:
-        """Verify client's JWT token before registration."""
-        try:
-            # Get token from client's metadata
-            metadata = client.get_properties()
-            token = metadata.get("token")
-            
-            if not token:
-                print("No token provided")
-                return False
-            
-            # Verify token
-            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-            
-            # If verification succeeds, register client
-            return super().register(client)
-            
-        except jwt.InvalidTokenError:
-            print("Invalid token")
-            return False
-        except Exception as e:
-            print(f"Error during registration: {e}")
-            return False
+class SaveModelStrategy(FedAvg):
+    def __init__(self):
+        super().__init__(
+            min_fit_clients=1,  # Minimum number of clients to train
+            min_evaluate_clients=1,  # Minimum number of clients to evaluate
+            min_available_clients=1,  # Minimum number of available clients
+        )
+        self.latest_parameters = None
+        self.round = 0
 
-def get_on_fit_config(rnd: int) -> Dict[str, str]:
-    """Return training configuration dict for each round."""
-    return {
-        "round": str(rnd),
-        "epochs": "1",
-        "batch_size": "32"
-    }
+    def aggregate_fit(self, rnd, results, failures):
+        self.round = rnd
+        aggregated_result = super().aggregate_fit(rnd, results, failures)
+        
+        if aggregated_result is not None:
+            # Get weights and number of samples from each client
+            weights_results = [(res.parameters, res.num_examples) for _, res in results]
+            
+            # Calculate weighted average of parameters
+            total_examples = sum(num_examples for _, num_examples in weights_results)
+            weighted_weights = [
+                np.sum([w[i] * num_examples for w, num_examples in weights_results], axis=0) / total_examples
+                for i in range(len(weights_results[0][0]))
+            ]
+            
+            # Update global model with aggregated parameters
+            self.latest_parameters = weighted_weights
+            global_model.set_weights(weighted_weights)
+            
+            print(f"\nRound {rnd} completed")
+            print(f"Number of clients trained: {len(results)}")
+            print(f"Total examples used: {total_examples}")
+            
+        return aggregated_result
 
-def get_evaluate_fn(model_path: str):
-    """Return an evaluation function for server-side evaluation."""
-    
-    def evaluate(
-        server_round: int,
-        parameters: Parameters,
-        config: Dict[str, str],
-    ) -> Optional[Tuple[float, Dict[str, float]]]:
-        """Evaluate model parameters using validation set."""
-        # Load validation data and model
-        # Implement if needed for centralized evaluation
-        return None  # No centralized evaluation for now
-    
-    return evaluate
+    def aggregate_evaluate(self, rnd, results, failures):
+        return super().aggregate_evaluate(rnd, results, failures)
 
 def start_flask_server():
     app.run(host='0.0.0.0', port=5000)
@@ -348,43 +320,6 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def main():
-    # Initialize strategy
-    strategy = FedAvg(
-        min_available_clients=MIN_CLIENTS,
-        evaluate_fn=get_evaluate_fn("global_model.pkl"),
-        on_fit_config_fn=get_on_fit_config,
-        mods=[secagg_mod()]  # Enable secure aggregation
-    )
-    
-    # SSL/TLS certificates
-    cert_dir = Path("certificates")
-    ssl_certificates = None
-    if cert_dir.exists():
-        ssl_certificates = (
-            str(cert_dir / "server.pem"),  # Server certificate
-            str(cert_dir / "server.key"),  # Server private key
-            str(cert_dir / "ca.pem")       # Root certificate
-        )
-    
-    # Start Flower server
-    fl.server.start_server(
-        server_address=SERVER_ADDRESS,
-        config=fl.server.ServerConfig(num_rounds=NUM_ROUNDS),
-        strategy=strategy,
-        client_manager=AuthClientManager(),
-        certificates=ssl_certificates
-    )
-
-def create_client_token(client_id: str, expiration_days: int = 30) -> str:
-    """Create a JWT token for client authentication."""
-    expiration = datetime.utcnow() + timedelta(days=expiration_days)
-    payload = {
-        "client_id": client_id,
-        "exp": expiration
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
 if __name__ == '__main__':
     # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=start_flask_server)
@@ -392,4 +327,9 @@ if __name__ == '__main__':
     flask_thread.start()
     
     # Start Flower server in the main thread
-    main() 
+    strategy = SaveModelStrategy()
+    fl.server.start_server(
+        server_address="0.0.0.0:8080",
+        config=fl.server.ServerConfig(num_rounds=5),  # Run 5 rounds of federated learning
+        strategy=strategy
+    ) 

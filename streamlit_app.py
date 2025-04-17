@@ -8,6 +8,7 @@ import os
 from model import HeartDiseaseModel
 import json
 import base64
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 # Load custom CSS
 def load_css():
@@ -118,9 +119,22 @@ if 'page' not in st.session_state:
     st.session_state.page = "login"
 
 # Database functions
+def numpy_to_json_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: numpy_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [numpy_to_json_serializable(item) for item in obj]
+    return obj
+
 def init_db():
     conn = sqlite3.connect('federated_learning.db')
     c = conn.cursor()
+    
+    # Drop existing tables to ensure clean initialization
+    c.execute('DROP TABLE IF EXISTS model_contributions')
+    c.execute('DROP TABLE IF EXISTS master_model')
     
     # Create users table
     c.execute('''
@@ -144,6 +158,60 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+    
+    # Create model_contributions table with accuracy
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS model_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            num_samples INTEGER,
+            model_weights BLOB,
+            accuracy REAL,
+            timestamp TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    
+    # Create master_model table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS master_model (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_weights BLOB,
+            updated_at TIMESTAMP
+        )
+    ''')
+    
+    # Initialize master model with test data
+    test_data = pd.DataFrame({
+        'age': [63, 67, 67, 37, 41],
+        'sex': [1, 1, 1, 1, 0],
+        'cp': [3, 0, 0, 3, 2],
+        'trestbps': [145, 160, 120, 130, 130],
+        'chol': [233, 286, 229, 250, 204],
+        'fbs': [1, 0, 0, 0, 0],
+        'restecg': [0, 0, 0, 1, 0],
+        'thalach': [150, 108, 129, 187, 172],
+        'exang': [0, 1, 1, 0, 0],
+        'oldpeak': [2.3, 1.5, 2.6, 3.5, 1.4],
+        'slope': [0, 1, 1, 0, 2],
+        'ca': [0, 3, 2, 0, 0],
+        'thal': [1, 2, 2, 2, 2],
+        'target': [0, 1, 1, 0, 1]
+    })
+    
+    # Initialize model with test data
+    initial_model = HeartDiseaseModel(test_data)
+    initial_weights = initial_model.get_weights()
+    
+    # Convert numpy arrays to JSON serializable format
+    serializable_weights = numpy_to_json_serializable(initial_weights)
+    
+    # Store initial model weights
+    c.execute('DELETE FROM master_model')  # Clear any existing entries
+    c.execute('''
+        INSERT INTO master_model (model_weights, updated_at)
+        VALUES (?, ?)
+    ''', (json.dumps(serializable_weights), datetime.now()))
     
     conn.commit()
     conn.close()
@@ -328,27 +396,67 @@ def profile_page():
         st.error("Could not load profile data")
         return
     
-    st.write(f"Username: {user_data['username']}")
+    # Display user info
+    st.markdown(f"""
+        <div class="profile-info">
+            <h3>User Information</h3>
+            <p><strong>Username:</strong> {user_data['username']}</p>
+            <p><strong>Email:</strong> {user_data['email']}</p>
+            <p><strong>Member since:</strong> {user_data['created_at']}</p>
+        </div>
+    """, unsafe_allow_html=True)
     
-    with st.form("update_profile"):
-        new_email = st.text_input("Email", value=user_data['email'])
-        submit = st.form_submit_button("Update Profile")
+    # Get user actions history
+    conn = sqlite3.connect('federated_learning.db')
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT action_type, details, timestamp 
+        FROM user_actions 
+        WHERE user_id = ? 
+        AND (action_type = 'data_upload' OR action_type = 'prediction')
+        ORDER BY timestamp DESC
+    ''', (st.session_state.user_id,))
+    
+    actions = c.fetchall()
+    conn.close()
+    
+    if actions:
+        st.markdown("<h3>Activity History</h3>", unsafe_allow_html=True)
         
-        if submit:
-            if update_profile(st.session_state.user_id, new_email):
-                st.success("Profile updated successfully")
-                log_user_action(st.session_state.user_id, "profile_update", f"Updated email to {new_email}")
-            else:
-                st.error("Failed to update profile")
+        for action in actions:
+            action_type, details, timestamp = action
+            icon = "📤" if action_type == "data_upload" else "🔍"
+            action_name = "Data Upload" if action_type == "data_upload" else "Model Inference"
+            
+            st.markdown(f"""
+                <div class="action-card">
+                    <div class="action-header">
+                        <span>{icon} {action_name}</span>
+                        <span class="action-time">{timestamp}</span>
+                    </div>
+                    <p class="action-details">{details}</p>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("No activity recorded yet")
 
 def upload_data_page():
-    st.title("Upload Data")
+    st.title("Upload Training Data")
     
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    if uploaded_file is not None:
+    st.write("Upload your training dataset (CSV format with target variables)")
+    
+    uploaded_training_file = st.file_uploader(
+        "Choose a CSV file", 
+        type="csv",
+        key="training_data_uploader",
+        help="Upload a CSV file containing training data with target variables"
+    )
+    
+    if uploaded_training_file is not None:
         try:
             # Read the CSV file
-            df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_training_file)
             
             # Check if the DataFrame has all required columns
             required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
@@ -358,96 +466,240 @@ def upload_data_page():
             
             if missing_columns:
                 st.error(f"Missing required columns: {', '.join(missing_columns)}")
-                st.write("The CSV file must contain the following columns:")
+                st.write("The training CSV file must contain the following columns:")
                 st.write(required_columns)
                 return
             
             # Display preview of the data
-            st.write("Preview of uploaded data:")
+            st.write("Preview of training data:")
             st.write(df.head())
             
-            # Initialize model with the data
+            # Initialize and train local model
             try:
-                st.session_state.local_model = HeartDiseaseModel(df)
-                st.success("Data uploaded and model initialized successfully!")
-                log_user_action(st.session_state.user_id, "data_upload", f"Uploaded file: {uploaded_file.name}")
+                progress_text = "Training local model..."
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Training steps
+                status_text.text("Initializing model...")
+                progress_bar.progress(10)
+                
+                local_model = HeartDiseaseModel(df)
+                progress_bar.progress(30)
+                status_text.text("Training in progress...")
+                
+                # Get training metrics
+                X = df.drop('target', axis=1)
+                y = df['target']
+                train_predictions = local_model.predict(X)
+                
+                progress_bar.progress(50)
+                status_text.text("Getting model weights...")
+                
+                # Get local model weights and prepare for storage
+                num_samples = len(df)
+                model_weights = local_model.get_weights()
+                serializable_weights = numpy_to_json_serializable(model_weights)
+                
+                progress_bar.progress(60)
+                status_text.text("Updating federated model...")
+                
+                # Store the contribution and update master model
+                conn = sqlite3.connect('federated_learning.db')
+                c = conn.cursor()
+                
+                try:
+                    # Begin transaction
+                    c.execute('BEGIN TRANSACTION')
+                    
+                    # Store the contribution
+                    c.execute('''
+                        INSERT INTO model_contributions (user_id, num_samples, model_weights, accuracy, timestamp)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (
+                        st.session_state.user_id,
+                        num_samples,
+                        json.dumps(serializable_weights),
+                        0.0,  # Placeholder accuracy value
+                        datetime.now()
+                    ))
+                    
+                    progress_bar.progress(70)
+                    status_text.text("Performing federated averaging...")
+                    
+                    # Get all contributions for federated averaging
+                    c.execute('''
+                        SELECT model_weights, num_samples 
+                        FROM model_contributions 
+                        ORDER BY timestamp DESC
+                    ''')
+                    contributions = c.fetchall()
+                    
+                    # Calculate total samples across all contributions
+                    total_samples = sum(contrib[1] for contrib in contributions)
+                    
+                    # Initialize dictionary for averaged weights
+                    averaged_weights = {}
+                    
+                    # Process first contribution to set up the structure
+                    first_weights = json.loads(contributions[0][0])
+                    for key in first_weights:
+                        averaged_weights[key] = np.zeros_like(np.array(first_weights[key]))
+                    
+                    # Perform federated averaging
+                    for weights_json, num_samples in contributions:
+                        weights = json.loads(weights_json)
+                        weight = num_samples / total_samples
+                        for key in weights:
+                            averaged_weights[key] += np.array(weights[key]) * weight
+                    
+                    progress_bar.progress(80)
+                    status_text.text("Saving master model...")
+                    
+                    # Convert averaged weights to JSON serializable format
+                    serializable_averaged_weights = numpy_to_json_serializable(averaged_weights)
+                    
+                    # Update master model
+                    c.execute('''
+                        INSERT INTO master_model (model_weights, updated_at)
+                        VALUES (?, ?)
+                    ''', (json.dumps(serializable_averaged_weights), datetime.now()))
+                    
+                    # Commit transaction
+                    c.execute('COMMIT')
+                    
+                except Exception as e:
+                    # Rollback in case of error
+                    c.execute('ROLLBACK')
+                    raise e
+                
+                finally:
+                    conn.close()
+                
+                progress_bar.progress(100)
+                status_text.text("Training complete!")
+                
+                # Log the training contribution
+                log_user_action(
+                    st.session_state.user_id,
+                    "data_upload",
+                    f"Contributed training data with {num_samples} samples"
+                )
+                
+                st.success(f"""
+                    Local model training complete! Your contribution has been added to the federated learning system.
+                    - Number of samples: {num_samples}
+                    - Model weights have been aggregated with the master model
+                """)
+                
             except Exception as e:
-                st.error(f"Error initializing model: {str(e)}")
+                st.error(f"Error training model: {str(e)}")
             
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
             st.write("Please ensure your CSV file is properly formatted and contains all required columns.")
 
 def prediction_page():
-    st.title("Make Prediction")
+    st.title("Make Predictions")
     
-    if st.session_state.local_model is None:
-        st.warning("Please upload data first to initialize the model.")
-        return
+    st.write("Upload a dataset for prediction (CSV format)")
     
-    st.write("Enter patient information:")
+    test_file = st.file_uploader(
+        "Choose a CSV file for prediction", 
+        type="csv",
+        key="test_data_uploader",
+        help="Upload a CSV file containing test data"
+    )
     
-    with st.form("prediction_form"):
-        age = st.number_input("Age", min_value=0, max_value=120)
-        sex = st.selectbox("Sex", ["Male", "Female"])
-        cp = st.selectbox("Chest Pain Type", ["Typical Angina", "Atypical Angina", "Non-anginal Pain", "Asymptomatic"])
-        trestbps = st.number_input("Resting Blood Pressure", min_value=0, max_value=300)
-        chol = st.number_input("Cholesterol", min_value=0, max_value=1000)
-        fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl", ["Yes", "No"])
-        restecg = st.selectbox("Resting ECG Results", ["Normal", "ST-T Wave Abnormality", "Left Ventricular Hypertrophy"])
-        thalach = st.number_input("Maximum Heart Rate", min_value=0, max_value=300)
-        exang = st.selectbox("Exercise Induced Angina", ["Yes", "No"])
-        oldpeak = st.number_input("ST Depression", min_value=0.0, max_value=10.0, step=0.1)
-        slope = st.selectbox("Slope of Peak Exercise ST Segment", ["Upsloping", "Flat", "Downsloping"])
-        ca = st.number_input("Number of Major Vessels", min_value=0, max_value=4)
-        thal = st.selectbox("Thalassemia", ["Normal", "Fixed Defect", "Reversible Defect"])
-        
-        submit = st.form_submit_button("Make Prediction")
-        
-        if submit:
-            # Convert categorical inputs to numerical
-            sex_map = {"Male": 1, "Female": 0}
-            cp_map = {"Typical Angina": 0, "Atypical Angina": 1, "Non-anginal Pain": 2, "Asymptomatic": 3}
-            fbs_map = {"Yes": 1, "No": 0}
-            restecg_map = {"Normal": 0, "ST-T Wave Abnormality": 1, "Left Ventricular Hypertrophy": 2}
-            exang_map = {"Yes": 1, "No": 0}
-            slope_map = {"Upsloping": 0, "Flat": 1, "Downsloping": 2}
-            thal_map = {"Normal": 1, "Fixed Defect": 2, "Reversible Defect": 3}
+    if test_file is not None:
+        try:
+            # Read the CSV file
+            df = pd.read_csv(test_file)
             
-            # Create input data
-            input_data = pd.DataFrame({
-                'age': [age],
-                'sex': [sex_map[sex]],
-                'cp': [cp_map[cp]],
-                'trestbps': [trestbps],
-                'chol': [chol],
-                'fbs': [fbs_map[fbs]],
-                'restecg': [restecg_map[restecg]],
-                'thalach': [thalach],
-                'exang': [exang_map[exang]],
-                'oldpeak': [oldpeak],
-                'slope': [slope_map[slope]],
-                'ca': [ca],
-                'thal': [thal_map[thal]]
+            # Check if the DataFrame has all required columns except 'target'
+            required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
+                              'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
+            
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                st.write("The prediction CSV file must contain the following columns:")
+                st.write(required_columns)
+                return
+            
+            # Remove target column if present
+            if 'target' in df.columns:
+                df = df.drop('target', axis=1)
+            
+            # Get latest master model weights
+            conn = sqlite3.connect('federated_learning.db')
+            c = conn.cursor()
+            
+            c.execute('SELECT model_weights FROM master_model ORDER BY updated_at DESC LIMIT 1')
+            result = c.fetchone()
+            conn.close()
+            
+            if result is None:
+                st.error("No master model available. Please contact the administrator.")
+                return
+            
+            # Initialize model with test data (required for the model to work)
+            test_data = pd.DataFrame({
+                'age': [63, 67, 67, 37, 41],
+                'sex': [1, 1, 1, 1, 0],
+                'cp': [3, 0, 0, 3, 2],
+                'trestbps': [145, 160, 120, 130, 130],
+                'chol': [233, 286, 229, 250, 204],
+                'fbs': [1, 0, 0, 0, 0],
+                'restecg': [0, 0, 0, 1, 0],
+                'thalach': [150, 108, 129, 187, 172],
+                'exang': [0, 1, 1, 0, 0],
+                'oldpeak': [2.3, 1.5, 2.6, 3.5, 1.4],
+                'slope': [0, 1, 1, 0, 2],
+                'ca': [0, 3, 2, 0, 0],
+                'thal': [1, 2, 2, 2, 2],
+                'target': [0, 1, 1, 0, 1]
             })
             
+            # Initialize model with test data and then set master weights
+            master_model = HeartDiseaseModel(test_data)
+            master_model.set_weights(json.loads(result[0]))
+            
+            # Make predictions
             try:
-                prediction = st.session_state.local_model.predict(input_data)
-                probability = st.session_state.local_model.predict_proba(input_data)
-                
-                if prediction[0] == 1:
-                    st.error(f"Heart Disease Detected (Probability: {probability[0][1]:.2%})")
-                else:
-                    st.success(f"No Heart Disease Detected (Probability: {probability[0][0]:.2%})")
-                
-                log_user_action(
-                    st.session_state.user_id,
-                    "prediction",
-                    f"Prediction made: {prediction[0]} (Probability: {max(probability[0]):.2%})"
-                )
+                with st.spinner('Making predictions...'):
+                    predictions = master_model.predict(df)
+                    probabilities = master_model.predict_proba(df)
+                    
+                    # Create results DataFrame
+                    results_df = df.copy()
+                    results_df['Prediction'] = predictions
+                    results_df['Probability'] = [prob[1] for prob in probabilities]
+                    
+                    # Display prediction results
+                    st.subheader("Prediction Results")
+                    st.write(results_df)
+                    
+                    # Download button for results
+                    csv = results_df.to_csv(index=False)
+                    b64 = base64.b64encode(csv.encode()).decode()
+                    href = f'<a href="data:file/csv;base64,{b64}" download="prediction_results.csv">Download Results CSV File</a>'
+                    st.markdown(href, unsafe_allow_html=True)
+                    
+                    # Log the prediction action
+                    log_user_action(
+                        st.session_state.user_id,
+                        "prediction",
+                        f"Made predictions on {len(df)} samples using master model"
+                    )
                 
             except Exception as e:
                 st.error(f"Error making prediction: {str(e)}")
+            
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+            st.write("Please ensure your CSV file is properly formatted and contains all required columns.")
 
 def show_sidebar():
     with st.sidebar:
