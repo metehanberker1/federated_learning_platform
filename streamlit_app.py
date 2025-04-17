@@ -8,6 +8,7 @@ import os
 from model import HeartDiseaseModel
 import json
 import base64
+import requests
 
 # Load custom CSS
 def load_css():
@@ -342,7 +343,13 @@ def profile_page():
                 st.error("Failed to update profile")
 
 def upload_data_page():
-    st.title("Upload Data")
+    st.title("Upload Training Data")
+    
+    # Information about data privacy
+    st.info("""
+        🔒 Your data remains on your computer. Only the trained model weights will be shared 
+        with our server for federated learning. No raw data leaves your system.
+    """)
     
     uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
     if uploaded_file is not None:
@@ -366,13 +373,58 @@ def upload_data_page():
             st.write("Preview of uploaded data:")
             st.write(df.head())
             
-            # Initialize model with the data
+            # Create a progress bar
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
             try:
+                # Initialize and train local model
+                status_text.text("Initializing local model...")
+                progress_bar.progress(10)
+                
                 st.session_state.local_model = HeartDiseaseModel(df)
-                st.success("Data uploaded and model initialized successfully!")
-                log_user_action(st.session_state.user_id, "data_upload", f"Uploaded file: {uploaded_file.name}")
+                
+                # Train the model locally
+                status_text.text("Training local model...")
+                for epoch in range(10):  # Example: 10 epochs
+                    # Train for one epoch
+                    train_loss = st.session_state.local_model.train_epoch()
+                    progress = (epoch + 1) * 8 + 10  # 10% for init, 80% for training
+                    progress_bar.progress(progress)
+                    status_text.text(f"Training local model... Epoch {epoch+1}/10 (Loss: {train_loss:.4f})")
+                
+                # Upload model weights to server
+                status_text.text("Uploading model weights to server...")
+                progress_bar.progress(90)
+                
+                weights = st.session_state.local_model.get_weights()
+                
+                # Send weights to server
+                response = requests.post(
+                    "http://localhost:5000/upload_weights",
+                    json={
+                        "user_id": st.session_state.user_id,
+                        "weights": weights
+                    }
+                )
+                
+                if response.status_code == 200:
+                    progress_bar.progress(100)
+                    status_text.text("✅ Training complete! Model weights uploaded successfully.")
+                    st.success("Your model has been trained and the weights have been contributed to the federated learning system.")
+                    
+                    # Log the action
+                    log_user_action(
+                        st.session_state.user_id,
+                        "model_training",
+                        f"Trained local model and uploaded weights"
+                    )
+                else:
+                    st.error("Failed to upload model weights to server. Please try again later.")
+                
             except Exception as e:
-                st.error(f"Error initializing model: {str(e)}")
+                st.error(f"Error during model training: {str(e)}")
+                status_text.text("❌ Training failed. Please try again.")
             
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
@@ -381,73 +433,97 @@ def upload_data_page():
 def prediction_page():
     st.title("Make Prediction")
     
-    if st.session_state.local_model is None:
-        st.warning("Please upload data first to initialize the model.")
-        return
+    st.info("""
+        🔍 This page uses our master model trained through federated learning across all participants.
+        No local training is required to make predictions.
+    """)
     
-    st.write("Enter patient information:")
+    try:
+        # Fetch the latest master model from server
+        response = requests.get("http://localhost:5000/get_master_model")
+        if response.status_code != 200:
+            st.error("Failed to fetch the master model. Please try again later.")
+            return
+            
+        master_model = response.json()["model"]
+        
+        st.write("Enter patient information:")
+        
+        with st.form("prediction_form"):
+            age = st.number_input("Age", min_value=0, max_value=120)
+            sex = st.selectbox("Sex", ["Male", "Female"])
+            cp = st.selectbox("Chest Pain Type", ["Typical Angina", "Atypical Angina", "Non-anginal Pain", "Asymptomatic"])
+            trestbps = st.number_input("Resting Blood Pressure", min_value=0, max_value=300)
+            chol = st.number_input("Cholesterol", min_value=0, max_value=1000)
+            fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl", ["Yes", "No"])
+            restecg = st.selectbox("Resting ECG Results", ["Normal", "ST-T Wave Abnormality", "Left Ventricular Hypertrophy"])
+            thalach = st.number_input("Maximum Heart Rate", min_value=0, max_value=300)
+            exang = st.selectbox("Exercise Induced Angina", ["Yes", "No"])
+            oldpeak = st.number_input("ST Depression", min_value=0.0, max_value=10.0, step=0.1)
+            slope = st.selectbox("Slope of Peak Exercise ST Segment", ["Upsloping", "Flat", "Downsloping"])
+            ca = st.number_input("Number of Major Vessels", min_value=0, max_value=4)
+            thal = st.selectbox("Thalassemia", ["Normal", "Fixed Defect", "Reversible Defect"])
+            
+            submit = st.form_submit_button("Make Prediction")
+            
+            if submit:
+                # Convert categorical inputs to numerical
+                sex_map = {"Male": 1, "Female": 0}
+                cp_map = {"Typical Angina": 0, "Atypical Angina": 1, "Non-anginal Pain": 2, "Asymptomatic": 3}
+                fbs_map = {"Yes": 1, "No": 0}
+                restecg_map = {"Normal": 0, "ST-T Wave Abnormality": 1, "Left Ventricular Hypertrophy": 2}
+                exang_map = {"Yes": 1, "No": 0}
+                slope_map = {"Upsloping": 0, "Flat": 1, "Downsloping": 2}
+                thal_map = {"Normal": 1, "Fixed Defect": 2, "Reversible Defect": 3}
+                
+                # Create input data
+                input_data = pd.DataFrame({
+                    'age': [age],
+                    'sex': [sex_map[sex]],
+                    'cp': [cp_map[cp]],
+                    'trestbps': [trestbps],
+                    'chol': [chol],
+                    'fbs': [fbs_map[fbs]],
+                    'restecg': [restecg_map[restecg]],
+                    'thalach': [thalach],
+                    'exang': [exang_map[exang]],
+                    'oldpeak': [oldpeak],
+                    'slope': [slope_map[slope]],
+                    'ca': [ca],
+                    'thal': [thal_map[thal]]
+                })
+                
+                try:
+                    # Make prediction using the master model
+                    response = requests.post(
+                        "http://localhost:5000/predict",
+                        json={"data": input_data.to_dict(orient='records')[0]}
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        prediction = result["prediction"]
+                        probability = result["probability"]
+                        
+                        if prediction == 1:
+                            st.error(f"❗ Heart Disease Detected (Probability: {probability:.2%})")
+                        else:
+                            st.success(f"✅ No Heart Disease Detected (Probability: {1-probability:.2%})")
+                        
+                        log_user_action(
+                            st.session_state.user_id,
+                            "prediction",
+                            f"Prediction made using master model: {prediction} (Probability: {max(probability, 1-probability):.2%})"
+                        )
+                    else:
+                        st.error("Failed to get prediction from server. Please try again.")
+                        
+                except Exception as e:
+                    st.error(f"Error making prediction: {str(e)}")
     
-    with st.form("prediction_form"):
-        age = st.number_input("Age", min_value=0, max_value=120)
-        sex = st.selectbox("Sex", ["Male", "Female"])
-        cp = st.selectbox("Chest Pain Type", ["Typical Angina", "Atypical Angina", "Non-anginal Pain", "Asymptomatic"])
-        trestbps = st.number_input("Resting Blood Pressure", min_value=0, max_value=300)
-        chol = st.number_input("Cholesterol", min_value=0, max_value=1000)
-        fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl", ["Yes", "No"])
-        restecg = st.selectbox("Resting ECG Results", ["Normal", "ST-T Wave Abnormality", "Left Ventricular Hypertrophy"])
-        thalach = st.number_input("Maximum Heart Rate", min_value=0, max_value=300)
-        exang = st.selectbox("Exercise Induced Angina", ["Yes", "No"])
-        oldpeak = st.number_input("ST Depression", min_value=0.0, max_value=10.0, step=0.1)
-        slope = st.selectbox("Slope of Peak Exercise ST Segment", ["Upsloping", "Flat", "Downsloping"])
-        ca = st.number_input("Number of Major Vessels", min_value=0, max_value=4)
-        thal = st.selectbox("Thalassemia", ["Normal", "Fixed Defect", "Reversible Defect"])
-        
-        submit = st.form_submit_button("Make Prediction")
-        
-        if submit:
-            # Convert categorical inputs to numerical
-            sex_map = {"Male": 1, "Female": 0}
-            cp_map = {"Typical Angina": 0, "Atypical Angina": 1, "Non-anginal Pain": 2, "Asymptomatic": 3}
-            fbs_map = {"Yes": 1, "No": 0}
-            restecg_map = {"Normal": 0, "ST-T Wave Abnormality": 1, "Left Ventricular Hypertrophy": 2}
-            exang_map = {"Yes": 1, "No": 0}
-            slope_map = {"Upsloping": 0, "Flat": 1, "Downsloping": 2}
-            thal_map = {"Normal": 1, "Fixed Defect": 2, "Reversible Defect": 3}
-            
-            # Create input data
-            input_data = pd.DataFrame({
-                'age': [age],
-                'sex': [sex_map[sex]],
-                'cp': [cp_map[cp]],
-                'trestbps': [trestbps],
-                'chol': [chol],
-                'fbs': [fbs_map[fbs]],
-                'restecg': [restecg_map[restecg]],
-                'thalach': [thalach],
-                'exang': [exang_map[exang]],
-                'oldpeak': [oldpeak],
-                'slope': [slope_map[slope]],
-                'ca': [ca],
-                'thal': [thal_map[thal]]
-            })
-            
-            try:
-                prediction = st.session_state.local_model.predict(input_data)
-                probability = st.session_state.local_model.predict_proba(input_data)
-                
-                if prediction[0] == 1:
-                    st.error(f"Heart Disease Detected (Probability: {probability[0][1]:.2%})")
-                else:
-                    st.success(f"No Heart Disease Detected (Probability: {probability[0][0]:.2%})")
-                
-                log_user_action(
-                    st.session_state.user_id,
-                    "prediction",
-                    f"Prediction made: {prediction[0]} (Probability: {max(probability[0]):.2%})"
-                )
-                
-            except Exception as e:
-                st.error(f"Error making prediction: {str(e)}")
+    except Exception as e:
+        st.error(f"Error connecting to server: {str(e)}")
+        st.write("Please ensure the server is running and try again.")
 
 def show_sidebar():
     with st.sidebar:
